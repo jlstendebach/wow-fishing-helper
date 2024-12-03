@@ -11,7 +11,7 @@ class App:
     timePerFrame = .1 # seconds
     imageWidth = 50
     imageHeight = 75
-    sampleStride = 2
+    sampleStride = 1
     brightnessThreshold = 240
     brightSpotThreshold = 10
     imagePath = "images/"
@@ -45,17 +45,21 @@ class App:
             # Grab the brightness of the image
             if self.isFishing:
                 image = self.captureImageAtMouse(self.imageWidth, self.imageHeight)
+
+                countTime = time.time()
                 brightSpotCount = self.getBrightSpotCount(image, self.sampleStride)
+                print("countTime: ", int((time.time() - countTime)*1000))
+
                 brightSpotCountDiff = brightSpotCount - lastBrightSpotCount
 
-                if brightSpotCountDiff >= self.brightSpotThreshold and lastImage != None:
-                    print("Fish detected! ({0} more bright spots)".format(brightSpotCountDiff))
+                if brightSpotCount >= self.brightSpotThreshold and lastImage != None:
+                    print("Fish detected! ({0} - {1} more bright spots)".format(brightSpotCount, brightSpotCountDiff))
                     self.sleepRandomTime(0.50, 1.00)
                     self.rightClick()
                     if self.isSavingImage:
                         self.saveBeforeAndAfterImage(lastImage, image)
                 elif brightSpotCountDiff >= self.brightSpotThreshold/2:
-                    print("Close call! ({0} more bright spots)".format(brightSpotCountDiff))
+                    print("Close call! ({0} - {1} more bright spots)".format(brightSpotCount, brightSpotCountDiff))
 
                 # Update the previous data for comparison in the next frame.
                 lastImage = image
@@ -106,12 +110,13 @@ class App:
         return int(brightness / count)
     
     def getBrightSpotCount(self, image, stride):
+        threshold = self.brightnessThreshold*3
         count = 0
         for x in range(0, image.size.width, stride):
             for y in range(0, image.size.height, stride):
                 r, g, b = image.pixel(x, y)
-                average = int((r+g+b)/3)
-                if average > self.brightnessThreshold:
+                average = r+g+b
+                if r+g+b > threshold:
                     count += 1
         return count        
     
