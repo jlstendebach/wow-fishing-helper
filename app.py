@@ -5,14 +5,15 @@ import pyautogui
 import random
 import sys
 import time
-from pynput import keyboard
+import win32gui
+from pynput import keyboard, mouse
 
 class App:
     timePerFrame = .1 # seconds
     imageWidth = 50
     imageHeight = 75
     sampleStride = 1
-    brightnessThreshold = 240
+    brightnessThreshold = 220
     brightSpotThreshold = 10
     imagePath = "images/"
 
@@ -20,50 +21,56 @@ class App:
     isFishing = False
     isSavingImage = False
 
+    bobberX = 0
+    bobberY = 0
+
+    mouseUpTime = 0
+
     sct = mss.mss()
 
     # --[ init ]----------------------------------------------------------------
     def __init__(self):
-        listener = keyboard.GlobalHotKeys({
-            "<ctrl>+<shift>+q": (lambda: self.onQuitHotkey()),
-            "<ctrl>+<shift>+f": (lambda: self.onFishingHotkey()),
+        keyListener = keyboard.GlobalHotKeys({
+            "<ctrl>+<shift>+q": self.onQuitHotkey,
+            "<ctrl>+<shift>+f": self.onFishingHotkey,
         })
-        listener.start()
+        keyListener.start()
 
-        print("Press 'ctrl+shift+q' to quit.")
-        print("Press 'ctrl+shift+f' to toggle fishing.")
+        mouseListener = mouse.Listener(on_click = self.onClick)
+        mouseListener.start()
+
+        print("+-------------------------------------------+")
+        print("| Fishing Helper                            |")
+        print("| - Press 'ctrl+shift+q' to quit            |")
+        print("| - Press 'ctrl+shift+f' to toggle fishing  |")
+        print("| - Double-click to set the bobber location |")
+        print("+-------------------------------------------+")
 
     # --[ Lifecycle ]-----------------------------------------------------------
     def start(self):
         self.isRunning = True
 
         lastImage = None
-        lastBrightSpotCount = 0
         while self.isRunning:
             frameTime = time.time()
 
             # Grab the brightness of the image
             if self.isFishing:
-                image = self.captureImageAtMouse(self.imageWidth, self.imageHeight)
-
-                countTime = time.time()
+                #image = self.captureImageAtMouse(self.imageWidth, self.imageHeight)
+                image = self.captureImageAtBobber(self.imageWidth, self.imageHeight)
                 brightSpotCount = self.getBrightSpotCount(image, self.sampleStride)
-                print("countTime: ", int((time.time() - countTime)*1000))
-
-                brightSpotCountDiff = brightSpotCount - lastBrightSpotCount
 
                 if brightSpotCount >= self.brightSpotThreshold and lastImage != None:
-                    print("Fish detected! ({0} - {1} more bright spots)".format(brightSpotCount, brightSpotCountDiff))
+                    print("Fish detected! ({0} bright spots)".format(brightSpotCount))
                     self.sleepRandomTime(0.50, 1.00)
-                    self.rightClick()
+                    self.rightClickAtBobber()
                     if self.isSavingImage:
-                        self.saveBeforeAndAfterImage(lastImage, image)
-                elif brightSpotCountDiff >= self.brightSpotThreshold/2:
-                    print("Close call! ({0} - {1} more bright spots)".format(brightSpotCount, brightSpotCountDiff))
+                        self.brightSpotCount(lastImage, image)
+                elif brightSpotCount >= self.brightSpotThreshold/2:
+                    print("Close call! ({0} bright spots)".format(brightSpotCount))
 
                 # Update the previous data for comparison in the next frame.
                 lastImage = image
-                lastBrightSpotCount = brightSpotCount
 
             # Sleep if needed
             frameTime = time.time() - frameTime
@@ -91,6 +98,9 @@ class App:
     def captureImageAtMouse(self, width, height):
         mouseX, mouseY = pyautogui.position()
         return self.captureImage(mouseX - width/2, mouseY - height/2, width, height)
+    
+    def captureImageAtBobber(self, width, height):
+        return self.captureImage(self.bobberX - width/2, self.bobberY - height/2, width, height)
 
     def previewImage(self, windowName, image):
         cv2.imshow(windowName, numpy.array(image))
@@ -108,6 +118,18 @@ class App:
     def rightClick(self):
         x, y = pyautogui.position()
         pyautogui.rightClick(x = x, y = y)
+    
+    def rightClickAtBobber(self): 
+        # Save the mouse position and active window to restore them later
+        lastX, lastY = pyautogui.position()
+        lastWindowTitle = self.getActiveWindowTitle()
+
+        # Right click at the bobber
+        pyautogui.rightClick(x = self.bobberX, y = self.bobberY)
+
+        # Restore the old mouse position and active window
+        pyautogui.moveTo(lastX, lastY)
+        self.setActiveWindow(lastWindowTitle)
 
     def sleepRandomTime(self, min, max):
         waitTime = random.uniform(min, max)
@@ -117,10 +139,38 @@ class App:
         beforeAndAfterImage = cv2.hconcat([numpy.array(beforeImage), numpy.array(afterImage)])
         cv2.imwrite(self.imagePath+str(int(time.time()))+".png", beforeAndAfterImage)
 
+    def toggleFishing(self, isFishing=None):        
+        self.isFishing = isFishing if isFishing != None else not self.isFishing
+        print("Fishing started" if self.isFishing else "Fishing stopped")
+
+    def getActiveWindowTitle(self):
+        return win32gui.GetWindowText(win32gui.GetForegroundWindow())
+    
+    def setActiveWindow(self, windowTitle):
+        window = win32gui.FindWindow(None, windowTitle)
+        if window:
+            win32gui.SetForegroundWindow(window)
+        
+
     # --[ UI Events ]-----------------------------------------------------------
+    def onClick(self, x, y, button, pressed):
+        if button == mouse.Button.left and pressed == False:
+            timeSinceLast = time.time() - self.mouseUpTime
+            if timeSinceLast < 0.2:
+                self.onDoubleClick(x, y)
+            self.mouseUpTime = time.time()
+
+    def onDoubleClick(self, x, y):
+        if self.getActiveWindowTitle() == "World of Warcraft":
+            self.bobberX = x
+            self.bobberY = y
+            print("Bobber location: ({0}, {1})".format(self.bobberX, self.bobberY))
+
     def onFishingHotkey(self):
-        self.isFishing = not self.isFishing
-        print("Fishing", ("started." if self.isFishing else "stopped."))
+        if self.getActiveWindowTitle() == "World of Warcraft":
+            self.toggleFishing()
+        else:
+            self.toggleFishing(False)
 
     def onQuitHotkey(self):
         self.stop()
