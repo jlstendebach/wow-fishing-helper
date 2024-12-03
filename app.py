@@ -1,19 +1,18 @@
 import cv2
 import numpy
 import mss.tools
-import pyautogui
+import pynput
 import random
 import sys
 import time
 import win32gui
-from pynput import keyboard, mouse
 
 class App:
     timePerFrame = .1 # seconds
     imageWidth = 50
     imageHeight = 75
-    sampleStride = 1
-    brightnessThreshold = 220
+    sampleStride = 2
+    brightnessThreshold = 240
     brightSpotThreshold = 10
     imagePath = "images/"
 
@@ -23,26 +22,29 @@ class App:
 
     bobberX = 0
     bobberY = 0
+    catchCooldown = 1.0 # seconds
+    catchTime = 0
 
+    mouseController = pynput.mouse.Controller()
     mouseUpTime = 0
 
     sct = mss.mss()
 
     # --[ init ]----------------------------------------------------------------
     def __init__(self):
-        keyListener = keyboard.GlobalHotKeys({
+        keyListener = pynput.keyboard.GlobalHotKeys({
             "<ctrl>+<shift>+q": self.onQuitHotkey,
             "<ctrl>+<shift>+f": self.onFishingHotkey,
         })
         keyListener.start()
 
-        mouseListener = mouse.Listener(on_click = self.onClick)
+        mouseListener = pynput.mouse.Listener(on_click = self.onClick)
         mouseListener.start()
 
         print("+-------------------------------------------+")
         print("| Fishing Helper                            |")
-        print("| - Press 'ctrl+shift+q' to quit            |")
-        print("| - Press 'ctrl+shift+f' to toggle fishing  |")
+        print("| - Press 'ctrl-shift-q' to quit            |")
+        print("| - Press 'ctrl-shift-f' to toggle fishing  |")
         print("| - Double-click to set the bobber location |")
         print("+-------------------------------------------+")
 
@@ -59,13 +61,17 @@ class App:
                 #image = self.captureImageAtMouse(self.imageWidth, self.imageHeight)
                 image = self.captureImageAtBobber(self.imageWidth, self.imageHeight)
                 brightSpotCount = self.getBrightSpotCount(image, self.sampleStride)
+                timeSinceCatch = time.time() - self.catchTime
 
-                if brightSpotCount >= self.brightSpotThreshold and lastImage != None:
-                    print("Fish detected! ({0} bright spots)".format(brightSpotCount))
+                if (brightSpotCount >= self.brightSpotThreshold 
+                    and lastImage != None
+                    and timeSinceCatch >= self.catchCooldown):
+                    print("Fish detected! ({0} bright spots)".format(brightSpotCount))                    
                     self.sleepRandomTime(0.50, 1.00)
                     self.rightClickAtBobber()
+                    self.catchTime = time.time()
                     if self.isSavingImage:
-                        self.brightSpotCount(lastImage, image)
+                        self.saveBeforeAndAfterImage(lastImage, image)
                 elif brightSpotCount >= self.brightSpotThreshold/2:
                     print("Close call! ({0} bright spots)".format(brightSpotCount))
 
@@ -96,7 +102,7 @@ class App:
         return self.sct.grab(area)
 
     def captureImageAtMouse(self, width, height):
-        mouseX, mouseY = pyautogui.position()
+        mouseX, mouseY = self.mouseController.position
         return self.captureImage(mouseX - width/2, mouseY - height/2, width, height)
     
     def captureImageAtBobber(self, width, height):
@@ -111,25 +117,22 @@ class App:
         for x in range(0, image.size.width, stride):
             for y in range(0, image.size.height, stride):
                 r, g, b = image.pixel(x, y)
-                if r+g+b > threshold:
+                if r+g+b >= threshold:
                     count += 1
         return count        
-    
-    def rightClick(self):
-        x, y = pyautogui.position()
-        pyautogui.rightClick(x = x, y = y)
-    
+        
     def rightClickAtBobber(self): 
         # Save the mouse position and active window to restore them later
-        lastX, lastY = pyautogui.position()
+        lastX, lastY = self.getMousePosition()
         lastWindowTitle = self.getActiveWindowTitle()
 
         # Right click at the bobber
-        pyautogui.rightClick(x = self.bobberX, y = self.bobberY)
+        self.rightClick(self.bobberX, self.bobberY)
 
         # Restore the old mouse position and active window
-        pyautogui.moveTo(lastX, lastY)
-        self.setActiveWindow(lastWindowTitle)
+        #pyautogui.moveTo(lastX, lastY)
+        #if lastWindowTitle != "World of Warcraft":
+        #    self.setActiveWindow(lastWindowTitle)
 
     def sleepRandomTime(self, min, max):
         waitTime = random.uniform(min, max)
@@ -150,11 +153,22 @@ class App:
         window = win32gui.FindWindow(None, windowTitle)
         if window:
             win32gui.SetForegroundWindow(window)
-        
 
+    # --[ UI Wrappers ]---------------------------------------------------------
+    def getMousePosition(self):
+        return self.mouseController.position
+    
+    def setMousePosition(self, x, y):
+        self.mouseController.position = (x, y)
+
+    def rightClick(self, x = None, y = None):
+        currentX, currentY = self.getMousePosition()
+        self.setMousePosition(x or currentX, y or currentY)
+        self.mouseController.click(pynput.mouse.Button.right)
+        
     # --[ UI Events ]-----------------------------------------------------------
     def onClick(self, x, y, button, pressed):
-        if button == mouse.Button.left and pressed == False:
+        if button == pynput.mouse.Button.left and pressed == False:
             timeSinceLast = time.time() - self.mouseUpTime
             if timeSinceLast < 0.2:
                 self.onDoubleClick(x, y)
