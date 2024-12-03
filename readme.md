@@ -8,3 +8,6 @@
 # Usage
 - python app.py [-s]
 - Add the argument "-s" to save captured images.
+- Pressed 'ctrl-shift-q' to quit.
+- Pressed 'ctrl-shift-f' to toggle a fishing session.
+- Double-click on the bobber to set its location.
