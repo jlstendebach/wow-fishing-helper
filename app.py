@@ -94,20 +94,6 @@ class App:
 
     def previewImage(self, windowName, image):
         cv2.imshow(windowName, numpy.array(image))
-
-    def getBrightness(self, r, g, b):
-        # return int(r*0.299 + g*0.587 + b*0.114) # Perceived brightness
-        return int((r+g+b)/3) # RGB average
-    
-    def getImageBrightness(self, image, stride): 
-        count = 0
-        brightness = 0
-        for x in range(0, image.size.width, stride):
-            for y in range(0, image.size.height, stride):
-                r, g, b = image.pixel(x, y)
-                count += 1
-                brightness += self.getBrightness(r, g, b)
-        return int(brightness / count)
     
     def getBrightSpotCount(self, image, stride):
         threshold = self.brightnessThreshold*3
@@ -115,7 +101,6 @@ class App:
         for x in range(0, image.size.width, stride):
             for y in range(0, image.size.height, stride):
                 r, g, b = image.pixel(x, y)
-                average = r+g+b
                 if r+g+b > threshold:
                     count += 1
         return count        
